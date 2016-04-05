@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+
+# /*------------------------------------------------------------------------*\
+# |                                                                          |
+# |                WTFPL & DSSL apply on this material.                      |
+# |                                                                          |
+# +--------------------------------------------------------------------------+
+# |                                                                          |
+# | netzogen : A Bash CLI to generate Unbound and DHCPD configuration        |
+# | Copyright (C) 2016 Flyounet — Tous droits réservés.                      |
+# |                                                                          |
+# | Cette œuvre est distribuée SANS AUCUNE GARANTIE hormis celle d'être      |
+# | distribuée sous les termes de la Licence Demerdez-vous («Demerden Sie    |
+# | Sich License») telle que publiée par Flyounet : soit la version 1 de     |
+# | cette licence,soit (à votre gré) toute version ultérieure.               |
+# | telle que publiée par Flyounet : soit la version 1 de cette licence,     |
+# | soit (à votre gré) toute version ultérieure.                             |
+# |                                                                          |
+# | Vous devriez avoir reçu une copie de la Licence Démerdez-vous avec cette |
+# | œuvre ; si ce n’est pas le cas, consultez :                              |
+# | <http://dssl.flyounet.net/licenses/>.                                    |
+# |                                                                          |
+# \*------------------------------------------------------------------------*/
+
+
+# Mac Addr, ip Addr, name-used for reverse|namea|nameb|namec
+
+# version
+RELEASE='$Format:%h$'
+VERSION='0.0.1'
+
+#
+# Output usage info
+#
+
+usage() {
+	cat <<EOF
+
+Usage: ${0} [-h] [-v] [-f filename] [-d filename] [-D filename] [-o]
+
+	-h/-H		Print this help
+	-v/-V		Print the version/And the short commit name
+	-f 'input File'	Parse this file (default: ./netzo.lst)
+	-d 'dhcp file'	Generate Dhcp output in this file (default: ./dhcpFile)
+	-D 'DNS file'	Generate DNS output in this file (default: ./dnsFile)
+	-o		Overwrite generated file
+
+The input file is parsed to find the followlling lines :
+# Blabla blahblah
+It's a comment, and it will be passed (as for empty lines)
+
+domain: (sub.)dom
+The domain (or sub-domain) will be apped to all following lines.
+Could be used more than once in the input file.
+
+mac_address,ip_adress,name1|name2|...
+A line will be added for the Dhcp conf with the mac_address and the host name1 (+domain if it exists) 
+A line will be added for the DNS conf with the ip_address and the host name1 (+domain if it exists) and a reverse.
+A line will be added for the DNS conf with the ip_address and the host name2 (+domain if it exists) as a pointer.
+If the mac_adress is not given, then the Dhcp conf is not generated for this line. The DNS one will be.
+
+; This is something important
+It will create it as a comment (starting with a #) in each config file.
+
+#exit-netzo
+It forces to exit from the parsed file. Useful when you have informations netzogen should not parse.
+EOF
+}
+
+#
+# die print message to stderr and exit
+#
+
+die() {
+        echo -e "${@}" >&2
+        exit 1
+}
+
+checkFile() {
+	[[ -e "${2}" ]] && {
+		read -p"Do you want to overwrite the ${1} configuration file ${2} ? [Y/N] :  " -n1 _answer
+		[[ "${_answer,,}" != 'y' ]] && die "\nUse -o to overwrite, or change the file name"
+		echo ''
+	}
+	return 0
+}
+
+netzoWork() {
+	: > "${__d:=dhcpFile}"
+	: > "${__D:=dnsFile}"
+	_cmt='^[[:space:]]*#'
+	while read l; do
+	#set -xv
+		[[ "${l,,}" =~ ${_cmt}[[:space:]]*exit-netzo[[:space:]]*$ ]] && { die "Exit due to config"; }
+		[[ "${l}" =~ ${_cmt} ]] && continue
+		[[ "${l}" =~ ^[[:space:]]*$ ]] && continue
+		[[ "${l,,}" =~ ^[[:space:]]*domain:[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]] && { export _fqdn=".${BASH_REMATCH[1]}"; continue; }
+		[[ "${l}" =~ ^[[:space:]]*\;(.*)$ ]] && { echo "#${BASH_REMATCH[1]//\\/\\\\}" >> "${__D}";  echo "#${BASH_REMATCH[1]}" >> "${__d}"; continue; }
+		IFS=',' read  m i n <<< "${l}"
+		_md=0
+		while read -d '|' sd n; do
+			[[ ${_md} -ne 0 ]] && {
+				(
+				cat <<EOTDNS
+local-data: "${sd}${_fqdn:=}.	IN A ${i}"
+EOTDNS
+				) >> "${__D}"
+			}
+			[[ ${_md} -eq 0 ]] && {
+				[[ ! -z "${m:=}" ]] && {
+					(
+					cat <<EOTDHCP
+host ${sd,,} {
+	hardware ethernet ${m,,};
+	fixed-address ${sd,,}${_fqdn:=};
+}
+
+EOTDHCP
+					) >> "${__d}"
+				}
+				(
+				cat <<EOTDNS
+local-data: "${sd}${_fqdn:=}.	IN A ${i}"
+local-data-ptr: "${i}		${sd}${_fqdn:=}"
+EOTDNS
+				) >> "${__D}"
+				_md=1
+			}
+		
+		done <<< "${n}|"
+		echo '' >> "${__D}"
+	done < "${__f}"
+#	done < "${_NETZO_CONFIG_FILE:=netzo.lst}"
+}
+
+##############################################################################
+# MAIN
+##############################################################################
+
+# used      : ------Dd---f--Hh-------------o------------Vv------------------
+# available : AaBbCc--EeF-Gg--IiJjKkLlMmNnO-PpQqRrSsTtUu--WwXxYyZz0123456789
+#           : AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789
+while getopts ":d:D:f:hHovV" option; do
+	case ${option} in
+		d) __d="${OPTARG}";;	# Output file for dhcpd conf
+		D) __D="${OPTARG}";;	# Output file for DNS conf
+		f) __f="${OPTARG}";;	# input file
+		h) usage; exit 0;;	# Help
+		H) usage 1; exit 0;;	# Help
+		o) __o=1;;		# Overwrite files without prompting
+		v|V) echo -n "${0} v${VERSION}"; [[ "${option}" = 'V' ]] && echo -n " [commit: ${RELEASE}]"; echo ''; exit 0;;
+		:) echo "Missing argument for '-${OPTARG}'" >&2 ; exit 1 ;;
+		?) echo "Argument unknown '-${OPTARG}'" >&2 ; exit 1 ;; # usage;;
+		*) echo "Argument unknown '-${option}'" >&2 ; exit 1 ;; # usage;;
+	esac
+done
+
+if [ ${__o:=0} -ne 1 ]; then
+	checkFile "Dhcp" "${__d:=dhcpFile}" || die "Not allowed to overwrite the Dhcp coonf : ${__d}"
+	checkFile "DNS" "${__D:=dnsFile}" || die "Not allowed to overwrite the DNS coonf : ${__D}"
+fi
+[[ ! -z "${__f:=./netzo.lst}" && -e "${__f}" && -r "${__f}" ]] || die "Input file '${__f}' doesn't exit, or can't be read. Aborting."
+
+netzoWork
+
+# $Format:%cn @ %cD$ : $Id$
