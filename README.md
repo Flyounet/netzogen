@@ -13,13 +13,14 @@ $ make uninstall
 ## Usage
 
 ```
-Usage: ./netzogen [-h] [-v] [-f filename] [-d filename] [-D filename] [-o]
+Usage: ./netzogen [-h] [-v] [-f filename] [-d filename] [-D filename] [-X filename] [-o]
 
         -h/-H           Print this help
         -v/-V           Print the version/And the short commit name
         -f 'input File' Parse this file (default: ./netzo.lst)
         -d 'dhcp file'  Generate Dhcp output in this file (default: ./dhcpFile)
         -D 'DNS file'   Generate DNS output in this file (default: ./dnsFile)
+        -X 'HTML file'  Generate HTML output in this file (default: ./htmlFile.html)
         -o              Overwrite generated file
 
 The input file is parsed to find the followlling lines :
@@ -109,3 +110,7 @@ local-data: "dhcp.in.test.      IN A 10.1.1.3"
   * WTFPL : do What The Fuck you Want to Public License
   * DSSL  : Demerden Sie Sich License
 
+## Method
+
+  * Coding method : @LA R.A.C.H.E
+  * Coding style  : [J.C.A.L.C](https://www.youtube.com/watch?v=p8oi6M4z_e0 "Je Code Avec Le Cul") (ex: SCRotUM)
