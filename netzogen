@@ -27,7 +27,7 @@
 
 # version
 RELEASE='$Format:%h$'
-VERSION='0.0.1'
+VERSION='0.1.0'
 
 #
 # Output usage info
@@ -43,6 +43,7 @@ Usage: ${0} [-h] [-v] [-f filename] [-d filename] [-D filename] [-o]
 	-f 'input File'	Parse this file (default: ./netzo.lst)
 	-d 'dhcp file'	Generate Dhcp output in this file (default: ./dhcpFile)
 	-D 'DNS file'	Generate DNS output in this file (default: ./dnsFile)
+	-X 'HTML file'	Generate HTML output in this file (default: ./htmlFile.html)
 	-o		Overwrite generated file
 
 The input file is parsed to find the followlling lines :
@@ -84,19 +85,54 @@ checkFile() {
 	}
 	return 0
 }
+hb () {
+	(
+	cat <<ENDOFHTMLBEGIN
+<html>
+ <head><title>Network Zoning Generator</title>
+ <style>*{font: 12px "Helvetica Neue", Helvetica, Arial, sans-serif;} th{color:#f00;} .cmt{font-style:mono;}</style></head>
+ <body><div><table>
+ENDOFHTMLBEGIN
+	) >> "${__X}"
+}
+h () {
+	[[ "${1:-}" == 'fqdn' ]] && {
+		printf '%s' "<tr><th colspan=3>${_fqdn}</th></tr>" >> "${__X}"
+		return
+	}
+	[[ "${1:-}" == 'cmt' ]] && {
+		shift
+		printf '%s' "<tr><td colspan=3 class='cmt'>${@}</td></tr>" >> "${__X}"
+		return
+	}
+	[[ "${1:-}" == 'i' || "${1:-}" == 'h' ]] && {
+		shift
+		printf '%s' "<tr><td>${1}</td><td>${2}</td><td>${3}</td></tr>" >> "${__X}"
+		return
+	}
+}
+he () {
+	(
+	cat <<ENDOFHTMLEND
 
+ </table></div><div><p>Generation date : $(date +"%FT%TZ")</p></div><body>
+</html>
+ENDOFHTMLEND
+	) >> "${__X}"
+}
 netzoWork() {
 	: > "${__d:=dhcpFile}"
 	: > "${__D:=dnsFile}"
+	: > "${__X:=htmlFile.html}"; export __X; hb;
 	_cmt='^[[:space:]]*#'
 	while read l; do
 	#set -xv
-		[[ "${l,,}" =~ ${_cmt}[[:space:]]*exit-netzo[[:space:]]*$ ]] && { die "Exit due to config"; }
+		[[ "${l,,}" =~ ${_cmt}[[:space:]]*exit-netzo[[:space:]]*$ ]] && { he; die "Exit due to config"; }
 		[[ "${l}" =~ ${_cmt} ]] && continue
 		[[ "${l}" =~ ^[[:space:]]*$ ]] && continue
-		[[ "${l,,}" =~ ^[[:space:]]*domain:[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]] && { export _fqdn=".${BASH_REMATCH[1]}"; continue; }
-		[[ "${l}" =~ ^[[:space:]]*\;(.*)$ ]] && { echo "#${BASH_REMATCH[1]//\\/\\\\}" >> "${__D}";  echo "#${BASH_REMATCH[1]}" >> "${__d}"; continue; }
-		IFS=',' read  m i n <<< "${l}"
+		[[ "${l,,}" =~ ^[[:space:]]*domain:[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]] && { export _fqdn=".${BASH_REMATCH[1]}"; h 'fqdn';continue; }
+		[[ "${l}" =~ ^[[:space:]]*\;(.*)$ ]] && { echo "#${BASH_REMATCH[1]//\\/\\\\}" >> "${__D}";  echo "#${BASH_REMATCH[1]}" >> "${__d}";h 'cmt' "${BASH_REMATCH[1]}"; continue; }
+		IFS=',' read  m i n <<< "${l}"; # m:mac adress i:ip adress n:name list
 		_md=0
 		while read -d '|' sd n; do
 			[[ ${_md} -ne 0 ]] && {
@@ -105,6 +141,7 @@ netzoWork() {
 local-data: "${sd}${_fqdn:=}.	IN A ${i}"
 EOTDNS
 				) >> "${__D}"
+				h 'h' "${i}" "${sd}${_fqdn:=}" "${m}"
 			}
 			[[ ${_md} -eq 0 ]] && {
 				[[ ! -z "${m:=}" ]] && {
@@ -124,12 +161,14 @@ local-data: "${sd}${_fqdn:=}.	IN A ${i}"
 local-data-ptr: "${i}		${sd}${_fqdn:=}"
 EOTDNS
 				) >> "${__D}"
+				h 'i' "${i}" "${sd}${_fqdn:=}" "${m}"
 				_md=1
 			}
 		
 		done <<< "${n}|"
 		echo '' >> "${__D}"
 	done < "${__f}"
+	he
 #	done < "${_NETZO_CONFIG_FILE:=netzo.lst}"
 }
 
@@ -137,10 +176,10 @@ EOTDNS
 # MAIN
 ##############################################################################
 
-# used      : ------Dd---f--Hh-------------o------------Vv------------------
-# available : AaBbCc--EeF-Gg--IiJjKkLlMmNnO-PpQqRrSsTtUu--WwXxYyZz0123456789
+# used      : ------Dd---f--Hh-------------o------------Vv--X---------------
+# available : AaBbCc--EeF-Gg--IiJjKkLlMmNnO-PpQqRrSsTtUu--Ww-xYyZz0123456789
 #           : AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789
-while getopts ":d:D:f:hHovV" option; do
+while getopts ":d:D:f:X:hHovV" option; do
 	case ${option} in
 		d) __d="${OPTARG}";;	# Output file for dhcpd conf
 		D) __D="${OPTARG}";;	# Output file for DNS conf
@@ -149,6 +188,7 @@ while getopts ":d:D:f:hHovV" option; do
 		H) usage 1; exit 0;;	# Help
 		o) __o=1;;		# Overwrite files without prompting
 		v|V) echo -n "${0} v${VERSION}"; [[ "${option}" = 'V' ]] && echo -n " [commit: ${RELEASE}]"; echo ''; exit 0;;
+		X) __X="${OPTARG}";;	# Output file for html
 		:) echo "Missing argument for '-${OPTARG}'" >&2 ; exit 1 ;;
 		?) echo "Argument unknown '-${OPTARG}'" >&2 ; exit 1 ;; # usage;;
 		*) echo "Argument unknown '-${option}'" >&2 ; exit 1 ;; # usage;;
@@ -156,8 +196,9 @@ while getopts ":d:D:f:hHovV" option; do
 done
 
 if [ ${__o:=0} -ne 1 ]; then
-	checkFile "Dhcp" "${__d:=dhcpFile}" || die "Not allowed to overwrite the Dhcp coonf : ${__d}"
-	checkFile "DNS" "${__D:=dnsFile}" || die "Not allowed to overwrite the DNS coonf : ${__D}"
+	checkFile "Dhcp" "${__d:=dhcpFile}" || die "Not allowed to overwrite the Dhcp conf : ${__d}"
+	checkFile "DNS" "${__D:=dnsFile}" || die "Not allowed to overwrite the DNS conf : ${__D}"
+	checkFile "HTML" "${__X:=htmlFile.html}" || die "Not allowed to overwrite the HTML file : ${__X}"
 fi
 [[ ! -z "${__f:=./netzo.lst}" && -e "${__f}" && -r "${__f}" ]] || die "Input file '${__f}' doesn't exit, or can't be read. Aborting."
 
