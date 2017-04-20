@@ -27,7 +27,7 @@
 
 # version
 RELEASE='$Format:%h$'
-VERSION='0.1.0'
+VERSION='0.1.1'
 
 #
 # Output usage info
@@ -36,7 +36,7 @@ VERSION='0.1.0'
 usage() {
 	cat <<EOF
 
-Usage: ${0} [-h] [-v] [-f filename] [-d filename] [-D filename] [-o]
+Usage: ${0} [-h] [-v] [-f filename] [-d filename] [-D filename] [-X filename] [-o]
 
 	-h/-H		Print this help
 	-v/-V		Print the version/And the short commit name
